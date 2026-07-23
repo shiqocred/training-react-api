@@ -1,0 +1,1686 @@
+openapi: 3.0.3
+info:
+  title: Fiber Banking API
+  version: 1.0.0
+  description: |
+    Dokumentasi OpenAPI untuk API perbankan sederhana berbasis Go Fiber.
+
+    Semua pesan response menggunakan bahasa Indonesia dan format standar:
+    - Sukses: `{ data: T, status: true, message: string }`
+    - Error: `{ status: false, message: string }`
+servers:
+  - url: http://localhost:3000
+    description: Local development
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Settings
+  - name: Customer
+  - name: Staff
+  - name: Admin
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Cek status API (public)
+      description: |
+        Endpoint publik untuk memastikan API berjalan.
+
+        role = `public`
+      security: []
+      responses:
+        "200":
+          description: API berjalan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      app: Fiber Banking API
+                    status: true
+                    message: API berjalan
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register customer (customer)
+      description: |
+        Endpoint publik untuk mendaftarkan user baru dengan role otomatis `customer`.
+
+        role = `customer`
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+            examples:
+              default:
+                value:
+                  name: Customer Baru
+                  email: customerbaru@example.com
+                  password: password123
+      responses:
+        "201":
+          description: Registrasi berhasil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      id: c3m2y8p9x0n4q7r1s6t5u8v2
+                      name: Customer Baru
+                      email: customerbaru@example.com
+                      role: customer
+                      account_number: "20260723153001u8v2"
+                    status: true
+                    message: Registrasi berhasil
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login (admin, staff, customer)
+      description: |
+        Login user admin, staff, atau customer menggunakan email dan password.
+
+        role = `admin`, `staff`, `customer`
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            examples:
+              default:
+                value:
+                  email: customer@example.com
+                  password: password123
+      responses:
+        "200":
+          description: Login berhasil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.signature
+                      user:
+                        id: ccustomer00000000000000001
+                        name: Customer Satu
+                        email: customer@example.com
+                        role: customer
+                    status: true
+                    message: Login berhasil
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Kirim OTP reset password (admin, staff, customer)
+      description: |
+        Mengirim OTP ke email via Resend. Jika `RESEND_API_KEY` kosong, OTP dicetak ke stdout untuk development.
+
+        role = `admin`, `staff`, `customer`
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordRequest"
+            examples:
+              default:
+                value:
+                  email: customer@example.com
+      responses:
+        "200":
+          description: OTP berhasil dikirim atau email tidak diungkap keberadaannya
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForgotPasswordSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      otp_id: cotp000000000000000000001
+                    status: true
+                    message: OTP berhasil dikirim ke email
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/auth/verify-otp:
+    post:
+      tags: [Auth]
+      summary: Verifikasi OTP dan ubah password (admin, staff, customer)
+      description: |
+        Memverifikasi OTP reset password lalu mengganti password baru.
+
+        role = `admin`, `staff`, `customer`
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyOtpRequest"
+            examples:
+              default:
+                value:
+                  email: customer@example.com
+                  otp: "123456"
+                  password: passwordbaru123
+                  verify_password: passwordbaru123
+      responses:
+        "200":
+          description: OTP valid dan password berhasil diperbarui
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptySuccessResponse"
+              examples:
+                success:
+                  value:
+                    status: true
+                    message: OTP valid dan password berhasil diperbarui
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/me:
+    get:
+      tags: [Settings]
+      summary: Info user login (admin, staff, customer)
+      description: |
+        Mengambil informasi user yang sedang login. Jika role customer, response menyertakan info rekening.
+
+        role = `admin`, `staff`, `customer`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      responses:
+        "200":
+          description: Data pengguna berhasil diambil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      id: ccustomer00000000000000001
+                      name: Customer Satu
+                      email: customer@example.com
+                      role: customer
+                      account:
+                        account_number: "1000000001"
+                        balance: 98750000
+                    status: true
+                    message: Data pengguna berhasil diambil
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/check-auth:
+    get:
+      tags: [Settings]
+      summary: Cek session valid (admin, staff, customer)
+      description: |
+        Mengecek apakah bearer token/session saat ini valid.
+
+        role = `admin`, `staff`, `customer`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      responses:
+        "200":
+          description: Session valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckAuthSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data: null
+                    message: Session valid
+                    status: true
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/settings/profile:
+    put:
+      tags: [Settings]
+      summary: Update profil user login (admin, staff, customer)
+      description: |
+        Mengubah nama dan email user yang sedang login.
+
+        role = `admin`, `staff`, `customer`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+            examples:
+              default:
+                value:
+                  name: Customer Satu Update
+                  email: customer.update@example.com
+      responses:
+        "200":
+          description: Profil berhasil diperbarui
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      id: ccustomer00000000000000001
+                      name: Customer Satu Update
+                      email: customer.update@example.com
+                      role: customer
+                    status: true
+                    message: Profil berhasil diperbarui
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/settings/password:
+    put:
+      tags: [Settings]
+      summary: Update password user login (admin, staff, customer)
+      description: |
+        Mengubah password user yang sedang login dengan validasi password lama.
+
+        role = `admin`, `staff`, `customer`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePasswordRequest"
+            examples:
+              default:
+                value:
+                  old_password: password123
+                  new_password: passwordbaru123
+                  verify_password: passwordbaru123
+      responses:
+        "200":
+          description: Password berhasil diperbarui
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptySuccessResponse"
+              examples:
+                success:
+                  value:
+                    status: true
+                    message: Password berhasil diperbarui
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/customer/mutations:
+    get:
+      tags: [Customer]
+      summary: List mutasi customer login (customer)
+      description: |
+        Mengambil daftar mutasi milik customer yang sedang login.
+
+        role = `customer`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/SearchQuery"
+        - $ref: "#/components/parameters/PageQuery"
+        - $ref: "#/components/parameters/PerPageQuery"
+      responses:
+        "200":
+          description: Mutasi berhasil diambil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationListSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      items:
+                        - id: ctx000000000000000000001
+                          type: transfer
+                          direction: out
+                          amount: 1250000
+                          balance_before: 100000000
+                          balance_after: 98750000
+                          reference_id: cref000000000000000000001
+                          note: Transfer awal antar customer
+                          actor_name: Customer Satu
+                          actor_role: customer
+                          created_at: "2026-07-23 15:30:00"
+                      pagination:
+                        current_page: 1
+                        per_page: 10
+                        from: 1
+                        total: 1
+                        last_page: 1
+                    status: true
+                    message: Mutasi berhasil diambil
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/customer/deposit:
+    post:
+      tags: [Customer]
+      summary: Setor tunai customer login (customer)
+      description: |
+        Customer melakukan setor tunai ke rekening sendiri.
+
+        role = `customer`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AmountRequest"
+            examples:
+              default:
+                value:
+                  amount: "100000.00"
+                  note: Setor tunai mandiri
+      responses:
+        "201":
+          description: Setor tunai berhasil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      amount: 10000000
+                      balance: 110000000
+                    status: true
+                    message: Setor tunai berhasil
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/customer/withdraw:
+    post:
+      tags: [Customer]
+      summary: Tarik tunai customer login (customer)
+      description: |
+        Customer melakukan tarik tunai dari rekening sendiri.
+
+        role = `customer`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AmountRequest"
+            examples:
+              default:
+                value:
+                  amount: "50000.00"
+                  note: Tarik tunai mandiri
+      responses:
+        "201":
+          description: Tarik tunai berhasil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      amount: 5000000
+                      balance: 105000000
+                    status: true
+                    message: Tarik tunai berhasil
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/customer/transfer:
+    post:
+      tags: [Customer]
+      summary: Transfer customer login (customer)
+      description: |
+        Customer melakukan transfer dari rekening sendiri ke customer lain.
+
+        role = `customer`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerTransferRequest"
+            examples:
+              default:
+                value:
+                  to_customer_id: ccustomer00000000000000002
+                  amount: "12500.00"
+                  note: Transfer belanja
+      responses:
+        "201":
+          description: Transfer berhasil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      reference_id: cref000000000000000000001
+                      amount: 1250000
+                      balance: 98750000
+                    status: true
+                    message: Transfer berhasil
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/staff/customers:
+    get:
+      tags: [Staff]
+      summary: List customers (admin, staff)
+      description: |
+        Mengambil daftar customer beserta rekening dan saldo. Bisa diakses role `staff` atau `admin`.
+
+        role = `admin`, `staff`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/SearchQuery"
+        - $ref: "#/components/parameters/PageQuery"
+        - $ref: "#/components/parameters/PerPageQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/CustomerListSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/staff/mutations:
+    get:
+      tags: [Staff]
+      summary: List semua mutasi customer (admin, staff)
+      description: |
+        Mengambil mutasi semua customer dan menyertakan aktor yang melakukan transaksi.
+
+        role = `admin`, `staff`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/SearchQuery"
+        - $ref: "#/components/parameters/PageQuery"
+        - $ref: "#/components/parameters/PerPageQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/AllMutationListSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/staff/customers/{customer_id}/deposit:
+    post:
+      tags: [Staff]
+      summary: Setor tunai untuk customer (admin, staff)
+      description: |
+        Staff atau admin melakukan setor tunai dengan memilih customer.
+
+        role = `admin`, `staff`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/CustomerIdPath"
+      requestBody:
+        $ref: "#/components/requestBodies/AmountBody"
+      responses:
+        "201":
+          $ref: "#/components/responses/StaffDepositSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/staff/customers/{customer_id}/withdraw:
+    post:
+      tags: [Staff]
+      summary: Tarik tunai untuk customer (admin, staff)
+      description: |
+        Staff atau admin melakukan tarik tunai dengan memilih customer.
+
+        role = `admin`, `staff`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/CustomerIdPath"
+      requestBody:
+        $ref: "#/components/requestBodies/AmountBody"
+      responses:
+        "201":
+          $ref: "#/components/responses/StaffWithdrawSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/staff/customers/{customer_id}/transfer:
+    post:
+      tags: [Staff]
+      summary: Transfer untuk customer (admin, staff)
+      description: |
+        Staff atau admin melakukan transfer dari customer pilihan ke customer tujuan.
+
+        role = `admin`, `staff`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/CustomerIdPath"
+      requestBody:
+        $ref: "#/components/requestBodies/CustomerTransferBody"
+      responses:
+        "201":
+          $ref: "#/components/responses/StaffTransferSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/admin/customers:
+    get:
+      tags: [Admin]
+      summary: List customers untuk admin (admin)
+      description: |
+        Alias fitur teller pada prefix admin. Mengambil daftar customer beserta rekening dan saldo.
+
+        role = `admin`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/SearchQuery"
+        - $ref: "#/components/parameters/PageQuery"
+        - $ref: "#/components/parameters/PerPageQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/CustomerListSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/admin/mutations:
+    get:
+      tags: [Admin]
+      summary: List semua mutasi customer untuk admin (admin)
+      description: |
+        Alias fitur teller pada prefix admin. Mengambil mutasi semua customer dan menyertakan aktor transaksi.
+
+        role = `admin`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/SearchQuery"
+        - $ref: "#/components/parameters/PageQuery"
+        - $ref: "#/components/parameters/PerPageQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/AllMutationListSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/admin/customers/{customer_id}/deposit:
+    post:
+      tags: [Admin]
+      summary: Admin setor tunai untuk customer (admin)
+      description: |
+        Alias fitur teller pada prefix admin. Admin melakukan setor tunai dengan memilih customer.
+
+        role = `admin`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/CustomerIdPath"
+      requestBody:
+        $ref: "#/components/requestBodies/AmountBody"
+      responses:
+        "201":
+          $ref: "#/components/responses/StaffDepositSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/admin/customers/{customer_id}/withdraw:
+    post:
+      tags: [Admin]
+      summary: Admin tarik tunai untuk customer (admin)
+      description: |
+        Alias fitur teller pada prefix admin. Admin melakukan tarik tunai dengan memilih customer.
+
+        role = `admin`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/CustomerIdPath"
+      requestBody:
+        $ref: "#/components/requestBodies/AmountBody"
+      responses:
+        "201":
+          $ref: "#/components/responses/StaffWithdrawSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/admin/customers/{customer_id}/transfer:
+    post:
+      tags: [Admin]
+      summary: Admin transfer untuk customer (admin)
+      description: |
+        Alias fitur teller pada prefix admin. Admin melakukan transfer dari customer pilihan ke customer tujuan.
+
+        role = `admin`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/CustomerIdPath"
+      requestBody:
+        $ref: "#/components/requestBodies/CustomerTransferBody"
+      responses:
+        "201":
+          $ref: "#/components/responses/StaffTransferSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/admin/staff:
+    get:
+      tags: [Admin]
+      summary: List staff (admin)
+      description: |
+        Admin mengambil daftar staff.
+
+        role = `admin`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/SearchQuery"
+        - $ref: "#/components/parameters/PageQuery"
+        - $ref: "#/components/parameters/PerPageQuery"
+      responses:
+        "200":
+          description: Staff berhasil diambil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffListSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      items:
+                        - id: cstaff000000000000000001
+                          name: Staff Teller
+                          email: staff@example.com
+                          role: staff
+                          created_at: "2026-07-23 15:30:00"
+                      pagination:
+                        current_page: 1
+                        per_page: 10
+                        from: 1
+                        total: 1
+                        last_page: 1
+                    status: true
+                    message: Staff berhasil diambil
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      tags: [Admin]
+      summary: Buat staff (admin)
+      description: |
+        Admin membuat user staff baru.
+
+        role = `admin`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffCreateRequest"
+            examples:
+              default:
+                value:
+                  name: Staff Baru
+                  email: staffbaru@example.com
+                  password: password123
+      responses:
+        "201":
+          description: Staff berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      id: cstaffbaru00000000000001
+                      name: Staff Baru
+                      email: staffbaru@example.com
+                      role: staff
+                    status: true
+                    message: Staff berhasil dibuat
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/admin/staff/{id}:
+    put:
+      tags: [Admin]
+      summary: Update staff (admin)
+      description: |
+        Admin memperbarui data staff. Field `password` opsional; jika kosong password tidak diubah.
+
+        role = `admin`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/StaffIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffUpdateRequest"
+            examples:
+              default:
+                value:
+                  name: Staff Teller Update
+                  email: staff.update@example.com
+                  password: passwordbaru123
+      responses:
+        "200":
+          description: Staff berhasil diperbarui
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      id: cstaff000000000000000001
+                      name: Staff Teller Update
+                      email: staff.update@example.com
+                      role: staff
+                    status: true
+                    message: Staff berhasil diperbarui
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+    delete:
+      tags: [Admin]
+      summary: Hapus staff (admin)
+      description: |
+        Admin menghapus staff secara soft delete.
+
+        role = `admin`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/StaffIdPath"
+      responses:
+        "200":
+          description: Staff berhasil dihapus
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptySuccessResponse"
+              examples:
+                success:
+                  value:
+                    status: true
+                    message: Staff berhasil dihapus
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Gunakan header `Authorization: Bearer <access_token>`."
+
+  parameters:
+    AuthorizationHeader:
+      name: Authorization
+      in: header
+      required: true
+      description: Token bearer hasil login.
+      schema:
+        type: string
+        example: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.signature
+    SearchQuery:
+      name: q
+      in: query
+      required: false
+      description: Kata kunci pencarian list.
+      schema:
+        type: string
+        example: customer
+    PageQuery:
+      name: page
+      in: query
+      required: false
+      description: Nomor halaman. Default `1`.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+        example: 1
+    PerPageQuery:
+      name: per_page
+      in: query
+      required: false
+      description: Jumlah data per halaman. Default `10`, maksimal `100`.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+        example: 10
+    CustomerIdPath:
+      name: customer_id
+      in: path
+      required: true
+      description: ID user customer tujuan operasi.
+      schema:
+        type: string
+        example: ccustomer00000000000000001
+    StaffIdPath:
+      name: id
+      in: path
+      required: true
+      description: ID user staff.
+      schema:
+        type: string
+        example: cstaff000000000000000001
+
+  requestBodies:
+    AmountBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AmountRequest"
+          examples:
+            default:
+              value:
+                amount: "100000.00"
+                note: Transaksi teller
+    CustomerTransferBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CustomerTransferRequest"
+          examples:
+            default:
+              value:
+                to_customer_id: ccustomer00000000000000002
+                amount: "12500.00"
+                note: Transfer via teller
+
+  responses:
+    ErrorResponse:
+      description: Contoh response error standar. Status code aktual dapat berupa 400, 401, 403, 404, 409, 502, atau 500 sesuai kasus.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            error:
+              value:
+                status: false
+                message: Request tidak valid
+    CustomerListSuccessResponse:
+      description: Customer berhasil diambil
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CustomerListSuccessResponse"
+          examples:
+            success:
+              value:
+                data:
+                  items:
+                    - id: ccustomer00000000000000001
+                      name: Customer Satu
+                      email: customer@example.com
+                      account_number: "1000000001"
+                      balance: 98750000
+                      created_at: "2026-07-23 15:30:00"
+                  pagination:
+                    current_page: 1
+                    per_page: 10
+                    from: 1
+                    total: 1
+                    last_page: 1
+                status: true
+                message: Customer berhasil diambil
+    AllMutationListSuccessResponse:
+      description: Mutasi semua customer berhasil diambil
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AllMutationListSuccessResponse"
+          examples:
+            success:
+              value:
+                data:
+                  items:
+                    - id: ctx000000000000000000001
+                      customer_name: Customer Satu
+                      actor_name: Staff Teller
+                      actor_role: staff
+                      type: deposit
+                      direction: in
+                      amount: 10000000
+                      balance_before: 90000000
+                      balance_after: 100000000
+                      reference_id: null
+                      note: Setor tunai teller
+                      created_at: "2026-07-23 15:30:00"
+                  pagination:
+                    current_page: 1
+                    per_page: 10
+                    from: 1
+                    total: 1
+                    last_page: 1
+                status: true
+                message: Mutasi semua customer berhasil diambil
+    StaffDepositSuccessResponse:
+      description: Setor tunai customer berhasil
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/OperationSuccessResponse"
+          examples:
+            success:
+              value:
+                data:
+                  amount: 10000000
+                  balance: 110000000
+                status: true
+                message: Setor tunai customer berhasil
+    StaffWithdrawSuccessResponse:
+      description: Tarik tunai customer berhasil
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/OperationSuccessResponse"
+          examples:
+            success:
+              value:
+                data:
+                  amount: 5000000
+                  balance: 105000000
+                status: true
+                message: Tarik tunai customer berhasil
+    StaffTransferSuccessResponse:
+      description: Transfer customer berhasil
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/OperationSuccessResponse"
+          examples:
+            success:
+              value:
+                data:
+                  reference_id: cref000000000000000000001
+                  amount: 1250000
+                  balance: 98750000
+                status: true
+                message: Transfer customer berhasil
+
+  schemas:
+    Role:
+      type: string
+      enum: [admin, staff, customer]
+      example: customer
+    TransactionType:
+      type: string
+      enum: [deposit, withdraw, transfer]
+      example: transfer
+    TransactionDirection:
+      type: string
+      enum: [in, out]
+      example: out
+    ErrorResponse:
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: Request tidak valid
+    Pagination:
+      type: object
+      required: [current_page, per_page, from, total, last_page]
+      properties:
+        current_page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 10
+        from:
+          type: integer
+          example: 1
+        total:
+          type: integer
+          format: int64
+          example: 25
+        last_page:
+          type: integer
+          example: 3
+    RegisterRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          example: Customer Baru
+        email:
+          type: string
+          format: email
+          example: customerbaru@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: password123
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: customer@example.com
+        password:
+          type: string
+          format: password
+          example: password123
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: customer@example.com
+    VerifyOtpRequest:
+      type: object
+      required: [email, otp, password, verify_password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: customer@example.com
+        otp:
+          type: string
+          minLength: 6
+          maxLength: 6
+          example: "123456"
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: passwordbaru123
+        verify_password:
+          type: string
+          format: password
+          minLength: 8
+          example: passwordbaru123
+    UpdateProfileRequest:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+          example: Customer Update
+        email:
+          type: string
+          format: email
+          example: customer.update@example.com
+    UpdatePasswordRequest:
+      type: object
+      required: [old_password, new_password, verify_password]
+      properties:
+        old_password:
+          type: string
+          format: password
+          example: password123
+        new_password:
+          type: string
+          format: password
+          minLength: 8
+          example: passwordbaru123
+        verify_password:
+          type: string
+          format: password
+          minLength: 8
+          example: passwordbaru123
+    AmountRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: string
+          description: Nominal dalam format desimal. Server menyimpan dan mengembalikan nominal sebagai integer cents.
+          example: "100000.00"
+        note:
+          type: string
+          nullable: true
+          example: Setor tunai mandiri
+    CustomerTransferRequest:
+      type: object
+      required: [to_customer_id, amount]
+      properties:
+        to_customer_id:
+          type: string
+          example: ccustomer00000000000000002
+        amount:
+          type: string
+          description: Nominal dalam format desimal. Server menyimpan dan mengembalikan nominal sebagai integer cents.
+          example: "12500.00"
+        note:
+          type: string
+          nullable: true
+          example: Transfer belanja
+    StaffCreateRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          example: Staff Baru
+        email:
+          type: string
+          format: email
+          example: staffbaru@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: password123
+    StaffUpdateRequest:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+          example: Staff Teller Update
+        email:
+          type: string
+          format: email
+          example: staff.update@example.com
+        password:
+          type: string
+          format: password
+          nullable: true
+          description: Opsional. Jika kosong, password tidak diubah.
+          example: passwordbaru123
+    UserData:
+      type: object
+      required: [id, name, email, role]
+      properties:
+        id:
+          type: string
+          example: ccustomer00000000000000001
+        name:
+          type: string
+          example: Customer Satu
+        email:
+          type: string
+          format: email
+          example: customer@example.com
+        role:
+          $ref: "#/components/schemas/Role"
+    RegisterData:
+      allOf:
+        - $ref: "#/components/schemas/UserData"
+        - type: object
+          required: [account_number]
+          properties:
+            account_number:
+              type: string
+              example: "1000000001"
+    LoginData:
+      type: object
+      required: [access_token, user]
+      properties:
+        access_token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.signature
+        user:
+          $ref: "#/components/schemas/UserData"
+    ForgotPasswordData:
+      type: object
+      nullable: true
+      properties:
+        otp_id:
+          type: string
+          example: cotp000000000000000000001
+    OperationData:
+      type: object
+      required: [amount, balance]
+      properties:
+        reference_id:
+          type: string
+          nullable: true
+          example: cref000000000000000000001
+        amount:
+          type: integer
+          format: int64
+          description: Nominal dalam cents.
+          example: 1250000
+        balance:
+          type: integer
+          format: int64
+          description: Saldo akhir dalam cents.
+          example: 98750000
+    CustomerItem:
+      type: object
+      required: [id, name, email, account_number, balance, created_at]
+      properties:
+        id:
+          type: string
+          example: ccustomer00000000000000001
+        name:
+          type: string
+          example: Customer Satu
+        email:
+          type: string
+          format: email
+          example: customer@example.com
+        account_number:
+          type: string
+          example: "1000000001"
+        balance:
+          type: integer
+          format: int64
+          example: 98750000
+        created_at:
+          type: string
+          example: "2026-07-23 15:30:00"
+    StaffItem:
+      type: object
+      required: [id, name, email, role, created_at]
+      properties:
+        id:
+          type: string
+          example: cstaff000000000000000001
+        name:
+          type: string
+          example: Staff Teller
+        email:
+          type: string
+          format: email
+          example: staff@example.com
+        role:
+          type: string
+          enum: [staff]
+          example: staff
+        created_at:
+          type: string
+          example: "2026-07-23 15:30:00"
+    StaffData:
+      type: object
+      required: [id, name, email, role]
+      properties:
+        id:
+          type: string
+          example: cstaff000000000000000001
+        name:
+          type: string
+          example: Staff Teller
+        email:
+          type: string
+          format: email
+          example: staff@example.com
+        role:
+          type: string
+          enum: [staff]
+          example: staff
+    MutationItem:
+      type: object
+      required:
+        [
+          id,
+          type,
+          direction,
+          amount,
+          balance_before,
+          balance_after,
+          actor_name,
+          actor_role,
+          created_at,
+        ]
+      properties:
+        id:
+          type: string
+          example: ctx000000000000000000001
+        type:
+          $ref: "#/components/schemas/TransactionType"
+        direction:
+          $ref: "#/components/schemas/TransactionDirection"
+        amount:
+          type: integer
+          format: int64
+          example: 1250000
+        balance_before:
+          type: integer
+          format: int64
+          example: 100000000
+        balance_after:
+          type: integer
+          format: int64
+          example: 98750000
+        reference_id:
+          type: string
+          nullable: true
+          example: cref000000000000000000001
+        note:
+          type: string
+          nullable: true
+          example: Transfer awal antar customer
+        actor_name:
+          type: string
+          example: Customer Satu
+        actor_role:
+          $ref: "#/components/schemas/Role"
+        created_at:
+          type: string
+          example: "2026-07-23 15:30:00"
+    AllMutationItem:
+      allOf:
+        - type: object
+          required: [customer_name]
+          properties:
+            customer_name:
+              type: string
+              example: Customer Satu
+        - $ref: "#/components/schemas/MutationItem"
+    HealthSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          type: object
+          required: [app]
+          properties:
+            app:
+              type: string
+              example: Fiber Banking API
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: API berjalan
+    EmptySuccessResponse:
+      type: object
+      required: [status, message]
+      properties:
+        data:
+          nullable: true
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Berhasil
+    RegisterSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          $ref: "#/components/schemas/RegisterData"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Registrasi berhasil
+    LoginSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          $ref: "#/components/schemas/LoginData"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Login berhasil
+    ForgotPasswordSuccessResponse:
+      type: object
+      required: [status, message]
+      properties:
+        data:
+          $ref: "#/components/schemas/ForgotPasswordData"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: OTP berhasil dikirim ke email
+    MeSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          allOf:
+            - $ref: "#/components/schemas/UserData"
+            - type: object
+              properties:
+                account:
+                  type: object
+                  nullable: true
+                  properties:
+                    account_number:
+                      type: string
+                      example: "1000000001"
+                    balance:
+                      type: integer
+                      format: int64
+                      example: 98750000
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Data pengguna berhasil diambil
+    CheckAuthSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          nullable: true
+          example: null
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Session valid
+    ProfileSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          $ref: "#/components/schemas/UserData"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Profil berhasil diperbarui
+    OperationSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          $ref: "#/components/schemas/OperationData"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Transfer berhasil
+    MutationListSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          type: object
+          required: [items, pagination]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/MutationItem"
+            pagination:
+              $ref: "#/components/schemas/Pagination"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Mutasi berhasil diambil
+    AllMutationListSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          type: object
+          required: [items, pagination]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/AllMutationItem"
+            pagination:
+              $ref: "#/components/schemas/Pagination"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Mutasi semua customer berhasil diambil
+    CustomerListSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          type: object
+          required: [items, pagination]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/CustomerItem"
+            pagination:
+              $ref: "#/components/schemas/Pagination"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Customer berhasil diambil
+    StaffListSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          type: object
+          required: [items, pagination]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/StaffItem"
+            pagination:
+              $ref: "#/components/schemas/Pagination"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Staff berhasil diambil
+    StaffSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          $ref: "#/components/schemas/StaffData"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Staff berhasil dibuat

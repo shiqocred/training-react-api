@@ -1,0 +1,2 @@
+-- Seeder SQL tidak dipakai untuk data awal karena password perlu Argon2 dan ID CUID2.
+-- Gunakan: go run ./cmd/seed
