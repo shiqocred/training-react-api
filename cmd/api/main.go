@@ -55,7 +55,7 @@ func main() {
 	session.RegisterRoutes(secured, db.Pool)
 	settings.RegisterRoutes(secured.Group("/settings"), db.Pool, cfg)
 	customer.RegisterRoutes(secured.Group("/customer", middleware.Role("customer")), db.Pool)
-	staff.RegisterRoutes(secured.Group("/staff", middleware.Role("staff", "admin")), db.Pool)
+	staff.RegisterRoutes(secured.Group("/staff", middleware.Role("staff", "admin")), db.Pool, cfg)
 	admin.RegisterRoutes(secured.Group("/admin", middleware.Role("admin")), db.Pool, cfg)
 
 	log.Fatal(app.Listen(":" + cfg.AppPort))

@@ -24,6 +24,7 @@ func RegisterRoutes(router fiber.Router, pool *pgxpool.Pool, cfg config.Config) 
 	router.Post("/login", h.Login)
 	router.Post("/forgot-password", h.ForgotPassword)
 	router.Post("/verify-otp", h.VerifyOTP)
+	router.Post("/reset-password", h.ResetPassword)
 }
 
 type registerRequest struct {
@@ -78,9 +79,9 @@ func (h Handler) Login(c fiber.Ctx) error {
 	if err := c.Bind().Body(&req); err != nil {
 		return utils.Error(c, fiber.StatusBadRequest, "Request tidak valid")
 	}
-	var user struct{ ID, Name, Email, Password, Role string }
-	err := h.Pool.QueryRow(c.Context(), `SELECT id,name,email,password,role FROM users WHERE email=$1 AND deleted_at IS NULL`, strings.ToLower(strings.TrimSpace(req.Email))).Scan(&user.ID, &user.Name, &user.Email, &user.Password, &user.Role)
-	if err != nil || !utils.VerifyPassword(req.Password, user.Password) {
+	var user struct{ ID, Name, Email, Password, Role, Status string }
+	err := h.Pool.QueryRow(c.Context(), `SELECT id,name,email,password,role,status FROM users WHERE email=$1 AND deleted_at IS NULL`, strings.ToLower(strings.TrimSpace(req.Email))).Scan(&user.ID, &user.Name, &user.Email, &user.Password, &user.Role, &user.Status)
+	if err != nil || user.Status != "active" || !utils.VerifyPassword(req.Password, user.Password) {
 		return utils.Error(c, fiber.StatusUnauthorized, "Email atau password salah")
 	}
 	key, err := utils.EnsureBearerKey(c.Context(), h.Pool)
@@ -131,14 +132,46 @@ func (h Handler) ForgotPassword(c fiber.Ctx) error {
 }
 
 type verifyOTPRequest struct {
-	Email          string `json:"email"`
-	OTP            string `json:"otp"`
-	Password       string `json:"password"`
-	VerifyPassword string `json:"verify_password"`
+	Email string `json:"email"`
+	OTP   string `json:"otp"`
 }
 
 func (h Handler) VerifyOTP(c fiber.Ctx) error {
 	var req verifyOTPRequest
+	if err := c.Bind().Body(&req); err != nil {
+		return utils.Error(c, fiber.StatusBadRequest, "Request tidak valid")
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	var otpID, otpHash string
+	var expiresAt time.Time
+	err := h.Pool.QueryRow(c.Context(), `SELECT o.id,o.otp_hash,o.expires_at FROM password_reset_otps o JOIN users u ON u.id=o.user_id WHERE o.email=$1 AND o.verified_at IS NULL AND o.used_at IS NULL AND u.deleted_at IS NULL ORDER BY o.created_at DESC LIMIT 1`, email).Scan(&otpID, &otpHash, &expiresAt)
+	if err != nil || time.Now().After(expiresAt) || !utils.VerifyPassword(req.OTP, otpHash) {
+		return utils.Error(c, fiber.StatusBadRequest, "OTP tidak valid atau sudah kedaluwarsa")
+	}
+	resetToken, err := generateResetToken()
+	if err != nil {
+		return utils.Error(c, fiber.StatusInternalServerError, "Gagal membuat token reset password")
+	}
+	resetTokenHash, err := utils.HashPassword(resetToken, ArgonParams(h.Cfg))
+	if err != nil {
+		return utils.Error(c, fiber.StatusInternalServerError, "Gagal mengamankan token reset password")
+	}
+	_, err = h.Pool.Exec(c.Context(), `UPDATE password_reset_otps SET verified_at=now(), reset_token_hash=$1, reset_token_expires_at=$2 WHERE id=$3`, resetTokenHash, time.Now().Add(10*time.Minute), otpID)
+	if err != nil {
+		return utils.Error(c, fiber.StatusInternalServerError, "Gagal menandai OTP")
+	}
+	return utils.Success(c, fiber.StatusOK, "OTP valid", fiber.Map{"email": email, "reset_token": resetToken})
+}
+
+type resetPasswordRequest struct {
+	Email          string `json:"email"`
+	ResetToken     string `json:"reset_token"`
+	Password       string `json:"password"`
+	VerifyPassword string `json:"verify_password"`
+}
+
+func (h Handler) ResetPassword(c fiber.Ctx) error {
+	var req resetPasswordRequest
 	if err := c.Bind().Body(&req); err != nil {
 		return utils.Error(c, fiber.StatusBadRequest, "Request tidak valid")
 	}
@@ -148,11 +181,12 @@ func (h Handler) VerifyOTP(c fiber.Ctx) error {
 	if len(req.Password) < 8 {
 		return utils.Error(c, fiber.StatusBadRequest, "Password minimal 8 karakter")
 	}
-	var otpID, userID, otpHash string
-	var expiresAt time.Time
-	err := h.Pool.QueryRow(c.Context(), `SELECT o.id,o.user_id,o.otp_hash,o.expires_at FROM password_reset_otps o JOIN users u ON u.id=o.user_id WHERE o.email=$1 AND o.verified_at IS NULL AND o.used_at IS NULL ORDER BY o.created_at DESC LIMIT 1`, strings.ToLower(strings.TrimSpace(req.Email))).Scan(&otpID, &userID, &otpHash, &expiresAt)
-	if err != nil || time.Now().After(expiresAt) || !utils.VerifyPassword(req.OTP, otpHash) {
-		return utils.Error(c, fiber.StatusBadRequest, "OTP tidak valid atau sudah kedaluwarsa")
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	var otpID, userID, resetTokenHash string
+	var resetTokenExpiresAt time.Time
+	err := h.Pool.QueryRow(c.Context(), `SELECT o.id,o.user_id,o.reset_token_hash,o.reset_token_expires_at FROM password_reset_otps o JOIN users u ON u.id=o.user_id WHERE o.email=$1 AND o.verified_at IS NOT NULL AND o.used_at IS NULL AND o.reset_token_hash IS NOT NULL AND o.reset_token_expires_at IS NOT NULL AND u.deleted_at IS NULL ORDER BY o.created_at DESC LIMIT 1`, email).Scan(&otpID, &userID, &resetTokenHash, &resetTokenExpiresAt)
+	if err != nil || time.Now().After(resetTokenExpiresAt) || !utils.VerifyPassword(req.ResetToken, resetTokenHash) {
+		return utils.Error(c, fiber.StatusBadRequest, "Token reset password tidak valid atau sudah kedaluwarsa")
 	}
 	passwordHash, err := utils.HashPassword(req.Password, ArgonParams(h.Cfg))
 	if err != nil {
@@ -167,12 +201,12 @@ func (h Handler) VerifyOTP(c fiber.Ctx) error {
 	if err != nil {
 		return utils.Error(c, fiber.StatusInternalServerError, "Gagal memperbarui password")
 	}
-	_, err = tx.Exec(c.Context(), `UPDATE password_reset_otps SET verified_at=now(), used_at=now() WHERE id=$1`, otpID)
+	_, err = tx.Exec(c.Context(), `UPDATE password_reset_otps SET used_at=now() WHERE id=$1`, otpID)
 	if err != nil {
-		return utils.Error(c, fiber.StatusInternalServerError, "Gagal menandai OTP")
+		return utils.Error(c, fiber.StatusInternalServerError, "Gagal menandai token reset password")
 	}
 	if err := tx.Commit(c.Context()); err != nil {
 		return utils.Error(c, fiber.StatusInternalServerError, "Gagal menyimpan password baru")
 	}
-	return utils.Success(c, fiber.StatusOK, "OTP valid dan password berhasil diperbarui", nil)
+	return utils.Success(c, fiber.StatusOK, "Password berhasil diperbarui", nil)
 }

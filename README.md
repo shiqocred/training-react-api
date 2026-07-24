@@ -46,19 +46,13 @@ Build image:
 docker build -t fiber-banking-api .
 ```
 
-Run API:
+Run API langsung:
 
 ```bash
 docker run --rm -p 3000:3000 --env-file .env fiber-banking-api
 ```
 
-Run seeder dari image yang sama:
-
-```bash
-docker run --rm --env-file .env fiber-banking-api seed
-```
-
-Contoh production seed:
+Contoh production seed dengan `docker run`:
 
 ```bash
 docker run --rm --env-file .env \
@@ -69,29 +63,42 @@ docker run --rm --env-file .env \
   fiber-banking-api seed
 ```
 
-### Traefik
+### Docker Compose di server
 
-Image ini kompatibel dengan Traefik karena API listen ke `APP_PORT` dan Dockerfile expose `3000`. Pastikan service Traefik mengarah ke port internal yang sama dengan `APP_PORT`.
+File compose sengaja tidak disimpan di repository API agar server bisa menggabungkan beberapa repo/service, misalnya API, PostgreSQL, Traefik, dan nanti frontend dari repo lain.
 
-Contoh label Docker Compose:
+Simpan compose di server, misalnya:
 
-```yaml
-services:
-  api:
-    image: fiber-banking-api
-    env_file: .env
-    environment:
-      NODE_ENV: production
-      APP_PORT: 3000
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.banking-api.rule=Host(`api.example.com`)
-      - traefik.http.routers.banking-api.entrypoints=websecure
-      - traefik.http.routers.banking-api.tls.certresolver=letsencrypt
-      - traefik.http.services.banking-api.loadbalancer.server.port=3000
+```txt
+/opt/banking/docker-compose.yml
+/opt/banking/.env
+/opt/banking/api/      # clone repo ini
+/opt/banking/frontend/ # nanti clone repo frontend
 ```
 
-Seeder sebaiknya dijalankan sebagai one-off job/container terpisah, bukan sebagai service yang selalu hidup.
+Traefik expose port `80` dan `443`, lalu meneruskan request domain API ke container API port internal `3000`. Seeder sebaiknya dijalankan sebagai one-off job/container terpisah, bukan sebagai service yang selalu hidup.
+
+Jika memakai service `seed` di compose server, pasang profile agar tidak ikut jalan saat deploy biasa:
+
+```yaml
+seed:
+  image: banking-api:latest
+  profiles:
+    - tools
+  command: ["seed"]
+```
+
+Dengan profile tersebut, seeder **tidak akan jalan** saat rebuild/redeploy biasa:
+
+```bash
+docker compose up -d --build
+```
+
+Seeder hanya jalan kalau dipanggil manual:
+
+```bash
+docker compose --profile tools run --rm seed
+```
 
 Email OTP dikirim menggunakan SDK resmi `github.com/resend/resend-go/v3`. Jika `RESEND_API_KEY` kosong, OTP akan ditulis ke stdout untuk development.
 

@@ -173,9 +173,9 @@ paths:
   /api/auth/verify-otp:
     post:
       tags: [Auth]
-      summary: Verifikasi OTP dan ubah password (admin, staff, customer)
+      summary: Verifikasi OTP reset password (admin, staff, customer)
       description: |
-        Memverifikasi OTP reset password lalu mengganti password baru.
+        Memverifikasi OTP reset password dan mengembalikan token reset password sementara.
 
         role = `admin`, `staff`, `customer`
       security: []
@@ -190,11 +190,49 @@ paths:
                 value:
                   email: customer@example.com
                   otp: "123456"
+      responses:
+        "200":
+          description: OTP valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyOtpSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      email: customer@example.com
+                      reset_token: reset-token-example
+                    status: true
+                    message: OTP valid
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Ubah password dengan token reset (admin, staff, customer)
+      description: |
+        Mengubah password baru setelah OTP terverifikasi. Token reset dikirim dari response verify OTP.
+
+        role = `admin`, `staff`, `customer`
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordRequest"
+            examples:
+              default:
+                value:
+                  email: customer@example.com
+                  reset_token: reset-token-example
                   password: passwordbaru123
                   verify_password: passwordbaru123
       responses:
         "200":
-          description: OTP valid dan password berhasil diperbarui
+          description: Password berhasil diperbarui
           content:
             application/json:
               schema:
@@ -203,7 +241,35 @@ paths:
                 success:
                   value:
                     status: true
-                    message: OTP valid dan password berhasil diperbarui
+                    message: Password berhasil diperbarui
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout user login (admin, staff, customer)
+      description: |
+        Mengakhiri sesi di sisi client. Token bearer tetap wajib dikirim agar server dapat memvalidasi sesi aktif.
+
+        role = `admin`, `staff`, `customer`
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      responses:
+        "200":
+          description: Logout berhasil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptySuccessResponse"
+              examples:
+                success:
+                  value:
+                    data: null
+                    status: true
+                    message: Logout berhasil
         default:
           $ref: "#/components/responses/ErrorResponse"
 
@@ -264,7 +330,11 @@ paths:
               examples:
                 success:
                   value:
-                    data: null
+                    data:
+                      id: cadmin000000000000000001
+                      name: Admin Utama
+                      email: admin@example.com
+                      role: admin
                     message: Session valid
                     status: true
         default:
@@ -367,6 +437,11 @@ paths:
         - $ref: "#/components/parameters/SearchQuery"
         - $ref: "#/components/parameters/PageQuery"
         - $ref: "#/components/parameters/PerPageQuery"
+        - $ref: "#/components/parameters/TransactionTypeQuery"
+        - $ref: "#/components/parameters/TransactionDirectionQuery"
+        - $ref: "#/components/parameters/ActorRoleQuery"
+        - $ref: "#/components/parameters/DateFromQuery"
+        - $ref: "#/components/parameters/DateToQuery"
       responses:
         "200":
           description: Mutasi berhasil diambil
@@ -398,6 +473,22 @@ paths:
                         last_page: 1
                     status: true
                     message: Mutasi berhasil diambil
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/customer/mutations/{id}:
+    get:
+      tags: [Customer]
+      summary: Detail mutasi customer login (customer)
+      description: Mengambil detail satu mutasi milik customer yang sedang login.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/MutationIdPath"
+      responses:
+        "200":
+          $ref: "#/components/responses/MutationSuccessResponse"
         default:
           $ref: "#/components/responses/ErrorResponse"
 
@@ -526,6 +617,21 @@ paths:
         default:
           $ref: "#/components/responses/ErrorResponse"
 
+  /api/staff/dashboard:
+    get:
+      tags: [Staff]
+      summary: Ringkasan dashboard staff (admin, staff)
+      description: Mengambil ringkasan customer, saldo, total income/outcome 30 hari, dan data chart harian.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      responses:
+        "200":
+          $ref: "#/components/responses/DashboardSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
   /api/staff/customers:
     get:
       tags: [Staff]
@@ -541,9 +647,100 @@ paths:
         - $ref: "#/components/parameters/SearchQuery"
         - $ref: "#/components/parameters/PageQuery"
         - $ref: "#/components/parameters/PerPageQuery"
+        - $ref: "#/components/parameters/CustomerStatusQuery"
       responses:
         "200":
           $ref: "#/components/responses/CustomerListSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      tags: [Staff]
+      summary: Buat customer (admin, staff)
+      description: Staff atau admin membuat customer beserta rekening awal bersaldo 0.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      requestBody:
+        $ref: "#/components/requestBodies/CustomerBody"
+      responses:
+        "201":
+          $ref: "#/components/responses/CustomerSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/staff/customers/options:
+    get:
+      tags: [Staff]
+      summary: Opsi customer untuk select (admin, staff)
+      description: Mengambil semua customer aktif tanpa pagination, search, atau limit untuk kebutuhan select transaksi.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      responses:
+        "200":
+          description: Opsi customer berhasil diambil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerOptionListSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      - id: ccustomer00000000000000001
+                        name: Customer Satu
+                        email: customer@example.com
+                        account_number: "1000000001"
+                    status: true
+                    message: Opsi customer berhasil diambil
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/staff/customers/{customer_id}:
+    get:
+      tags: [Staff]
+      summary: Detail customer (admin, staff)
+      description: Mengambil detail core customer, rekening, status, dan mutasi terbaru.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/CustomerIdPath"
+      responses:
+        "200":
+          $ref: "#/components/responses/CustomerDetailSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+    put:
+      tags: [Staff]
+      summary: Update customer (admin, staff)
+      description: Memperbarui profil, status, dan opsional password customer.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/CustomerIdPath"
+      requestBody:
+        $ref: "#/components/requestBodies/CustomerBody"
+      responses:
+        "200":
+          $ref: "#/components/responses/CustomerSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+    delete:
+      tags: [Staff]
+      summary: Hapus customer (admin, staff)
+      description: Soft delete customer dan menandai status menjadi inactive.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/CustomerIdPath"
+      responses:
+        "200":
+          $ref: "#/components/responses/EmptySuccessResponse"
         default:
           $ref: "#/components/responses/ErrorResponse"
 
@@ -562,9 +759,31 @@ paths:
         - $ref: "#/components/parameters/SearchQuery"
         - $ref: "#/components/parameters/PageQuery"
         - $ref: "#/components/parameters/PerPageQuery"
+        - $ref: "#/components/parameters/TransactionTypeQuery"
+        - $ref: "#/components/parameters/TransactionDirectionQuery"
+        - $ref: "#/components/parameters/CustomerIdQuery"
+        - $ref: "#/components/parameters/ActorRoleQuery"
+        - $ref: "#/components/parameters/DateFromQuery"
+        - $ref: "#/components/parameters/DateToQuery"
       responses:
         "200":
           $ref: "#/components/responses/AllMutationListSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/staff/mutations/{id}:
+    get:
+      tags: [Staff]
+      summary: Detail mutasi (admin, staff)
+      description: Mengambil detail satu mutasi berdasarkan ID transaksi.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/MutationIdPath"
+      responses:
+        "200":
+          $ref: "#/components/responses/AllMutationSuccessResponse"
         default:
           $ref: "#/components/responses/ErrorResponse"
 
@@ -631,6 +850,21 @@ paths:
         default:
           $ref: "#/components/responses/ErrorResponse"
 
+  /api/admin/dashboard:
+    get:
+      tags: [Admin]
+      summary: Ringkasan dashboard admin (admin)
+      description: Alias dashboard teller pada prefix admin.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      responses:
+        "200":
+          $ref: "#/components/responses/DashboardSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
   /api/admin/customers:
     get:
       tags: [Admin]
@@ -646,9 +880,100 @@ paths:
         - $ref: "#/components/parameters/SearchQuery"
         - $ref: "#/components/parameters/PageQuery"
         - $ref: "#/components/parameters/PerPageQuery"
+        - $ref: "#/components/parameters/CustomerStatusQuery"
       responses:
         "200":
           $ref: "#/components/responses/CustomerListSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      tags: [Admin]
+      summary: Buat customer (admin)
+      description: Admin membuat customer beserta rekening awal bersaldo 0.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      requestBody:
+        $ref: "#/components/requestBodies/CustomerBody"
+      responses:
+        "201":
+          $ref: "#/components/responses/CustomerSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/admin/customers/options:
+    get:
+      tags: [Admin]
+      summary: Opsi customer untuk select (admin)
+      description: Mengambil semua customer aktif tanpa pagination, search, atau limit untuk kebutuhan select transaksi.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      responses:
+        "200":
+          description: Opsi customer berhasil diambil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerOptionListSuccessResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      - id: ccustomer00000000000000001
+                        name: Customer Satu
+                        email: customer@example.com
+                        account_number: "1000000001"
+                    status: true
+                    message: Opsi customer berhasil diambil
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/admin/customers/{customer_id}:
+    get:
+      tags: [Admin]
+      summary: Detail customer (admin)
+      description: Admin mengambil detail core customer, rekening, status, dan mutasi terbaru.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/CustomerIdPath"
+      responses:
+        "200":
+          $ref: "#/components/responses/CustomerDetailSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+    put:
+      tags: [Admin]
+      summary: Update customer (admin)
+      description: Admin memperbarui profil, status, dan opsional password customer.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/CustomerIdPath"
+      requestBody:
+        $ref: "#/components/requestBodies/CustomerBody"
+      responses:
+        "200":
+          $ref: "#/components/responses/CustomerSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+    delete:
+      tags: [Admin]
+      summary: Hapus customer (admin)
+      description: Admin melakukan soft delete customer dan menandai status inactive.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/CustomerIdPath"
+      responses:
+        "200":
+          $ref: "#/components/responses/EmptySuccessResponse"
         default:
           $ref: "#/components/responses/ErrorResponse"
 
@@ -667,9 +992,31 @@ paths:
         - $ref: "#/components/parameters/SearchQuery"
         - $ref: "#/components/parameters/PageQuery"
         - $ref: "#/components/parameters/PerPageQuery"
+        - $ref: "#/components/parameters/TransactionTypeQuery"
+        - $ref: "#/components/parameters/TransactionDirectionQuery"
+        - $ref: "#/components/parameters/CustomerIdQuery"
+        - $ref: "#/components/parameters/ActorRoleQuery"
+        - $ref: "#/components/parameters/DateFromQuery"
+        - $ref: "#/components/parameters/DateToQuery"
       responses:
         "200":
           $ref: "#/components/responses/AllMutationListSuccessResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /api/admin/mutations/{id}:
+    get:
+      tags: [Admin]
+      summary: Detail mutasi (admin)
+      description: Admin mengambil detail satu mutasi berdasarkan ID transaksi.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - $ref: "#/components/parameters/MutationIdPath"
+      responses:
+        "200":
+          $ref: "#/components/responses/AllMutationSuccessResponse"
         default:
           $ref: "#/components/responses/ErrorResponse"
 
@@ -954,6 +1301,68 @@ components:
       schema:
         type: string
         example: cstaff000000000000000001
+    MutationIdPath:
+      name: id
+      in: path
+      required: true
+      description: ID mutasi/transaksi.
+      schema:
+        type: string
+        example: ctx000000000000000000001
+    CustomerStatusQuery:
+      name: status
+      in: query
+      required: false
+      description: Filter status customer.
+      schema:
+        $ref: "#/components/schemas/CustomerStatus"
+    TransactionTypeQuery:
+      name: type
+      in: query
+      required: false
+      description: Filter jenis transaksi.
+      schema:
+        $ref: "#/components/schemas/TransactionType"
+    TransactionDirectionQuery:
+      name: direction
+      in: query
+      required: false
+      description: Filter arah transaksi.
+      schema:
+        $ref: "#/components/schemas/TransactionDirection"
+    CustomerIdQuery:
+      name: customer_id
+      in: query
+      required: false
+      description: Filter mutasi berdasarkan customer.
+      schema:
+        type: string
+        example: ccustomer00000000000000001
+    ActorRoleQuery:
+      name: actor_role
+      in: query
+      required: false
+      description: Filter role aktor transaksi.
+      schema:
+        $ref: "#/components/schemas/Role"
+    DateFromQuery:
+      name: date_from
+      in: query
+      required: false
+      description: Tanggal awal filter mutasi (inklusif).
+      schema:
+        type: string
+        format: date
+        example: "2026-07-01"
+    DateToQuery:
+      name: date_to
+      in: query
+      required: false
+      description: Tanggal akhir filter mutasi (inklusif).
+      schema:
+        type: string
+        format: date
+        example: "2026-07-31"
 
   requestBodies:
     AmountBody:
@@ -979,6 +1388,19 @@ components:
                 to_customer_id: ccustomer00000000000000002
                 amount: "12500.00"
                 note: Transfer via teller
+    CustomerBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CustomerUpsertRequest"
+          examples:
+            create:
+              value:
+                name: Customer Baru
+                email: customerbaru@example.com
+                password: password123
+                status: active
 
   responses:
     ErrorResponse:
@@ -1008,7 +1430,9 @@ components:
                       email: customer@example.com
                       account_number: "1000000001"
                       balance: 98750000
+                      status: active
                       created_at: "2026-07-23 15:30:00"
+                      updated_at: "2026-07-23 15:30:00"
                   pagination:
                     current_page: 1
                     per_page: 10
@@ -1029,6 +1453,7 @@ components:
                 data:
                   items:
                     - id: ctx000000000000000000001
+                      customer_id: ccustomer00000000000000001
                       customer_name: Customer Satu
                       actor_name: Staff Teller
                       actor_role: staff
@@ -1086,11 +1511,42 @@ components:
             success:
               value:
                 data:
+                  transaction_id: ctx000000000000000000001
                   reference_id: cref000000000000000000001
                   amount: 1250000
                   balance: 98750000
                 status: true
                 message: Transfer customer berhasil
+    CustomerSuccessResponse:
+      description: Customer berhasil diproses
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CustomerSuccessResponse"
+    CustomerDetailSuccessResponse:
+      description: Detail customer berhasil diambil
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CustomerDetailSuccessResponse"
+    MutationSuccessResponse:
+      description: Detail mutasi berhasil diambil
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/MutationSuccessResponse"
+    AllMutationSuccessResponse:
+      description: Detail mutasi semua customer berhasil diambil
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AllMutationSuccessResponse"
+    DashboardSuccessResponse:
+      description: Ringkasan dashboard berhasil diambil
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DashboardSuccessResponse"
 
   schemas:
     Role:
@@ -1105,6 +1561,10 @@ components:
       type: string
       enum: [in, out]
       example: out
+    CustomerStatus:
+      type: string
+      enum: [active, inactive, blocked]
+      example: active
     ErrorResponse:
       type: object
       required: [status, message]
@@ -1173,7 +1633,7 @@ components:
           example: customer@example.com
     VerifyOtpRequest:
       type: object
-      required: [email, otp, password, verify_password]
+      required: [email, otp]
       properties:
         email:
           type: string
@@ -1184,6 +1644,17 @@ components:
           minLength: 6
           maxLength: 6
           example: "123456"
+    ResetPasswordRequest:
+      type: object
+      required: [email, reset_token, password, verify_password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: customer@example.com
+        reset_token:
+          type: string
+          example: reset-token-example
         password:
           type: string
           format: password
@@ -1194,6 +1665,17 @@ components:
           format: password
           minLength: 8
           example: passwordbaru123
+    VerifyOtpData:
+      type: object
+      required: [email, reset_token]
+      properties:
+        email:
+          type: string
+          format: email
+          example: customer@example.com
+        reset_token:
+          type: string
+          example: reset-token-example
     UpdateProfileRequest:
       type: object
       required: [name, email]
@@ -1250,6 +1732,26 @@ components:
           type: string
           nullable: true
           example: Transfer belanja
+    CustomerUpsertRequest:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+          example: Customer Baru
+        email:
+          type: string
+          format: email
+          example: customerbaru@example.com
+        password:
+          type: string
+          format: password
+          nullable: true
+          description: Wajib saat create. Opsional saat update; jika kosong password tidak diubah.
+          minLength: 8
+          example: password123
+        status:
+          $ref: "#/components/schemas/CustomerStatus"
     StaffCreateRequest:
       type: object
       required: [name, email, password]
@@ -1328,6 +1830,11 @@ components:
       type: object
       required: [amount, balance]
       properties:
+        transaction_id:
+          type: string
+          nullable: true
+          description: ID transaksi utama yang dibuat oleh operasi.
+          example: ctx000000000000000000001
         reference_id:
           type: string
           nullable: true
@@ -1344,7 +1851,17 @@ components:
           example: 98750000
     CustomerItem:
       type: object
-      required: [id, name, email, account_number, balance, created_at]
+      required:
+        [
+          id,
+          name,
+          email,
+          account_number,
+          balance,
+          status,
+          created_at,
+          updated_at,
+        ]
       properties:
         id:
           type: string
@@ -1363,9 +1880,53 @@ components:
           type: integer
           format: int64
           example: 98750000
+        status:
+          $ref: "#/components/schemas/CustomerStatus"
         created_at:
           type: string
           example: "2026-07-23 15:30:00"
+        updated_at:
+          type: string
+          example: "2026-07-23 15:30:00"
+    CustomerOptionItem:
+      type: object
+      required: [id, name, email, account_number]
+      properties:
+        id:
+          type: string
+          example: ccustomer00000000000000001
+        name:
+          type: string
+          example: Customer Satu
+        email:
+          type: string
+          format: email
+          example: customer@example.com
+        account_number:
+          type: string
+          example: "1000000001"
+    CustomerData:
+      allOf:
+        - $ref: "#/components/schemas/RegisterData"
+        - type: object
+          required: [balance, status]
+          properties:
+            balance:
+              type: integer
+              format: int64
+              example: 0
+            status:
+              $ref: "#/components/schemas/CustomerStatus"
+    CustomerDetailData:
+      allOf:
+        - $ref: "#/components/schemas/CustomerItem"
+        - type: object
+          required: [mutations]
+          properties:
+            mutations:
+              type: array
+              items:
+                $ref: "#/components/schemas/AllMutationItem"
     StaffItem:
       type: object
       required: [id, name, email, role, created_at]
@@ -1423,6 +1984,10 @@ components:
         id:
           type: string
           example: ctx000000000000000000001
+        customer_id:
+          type: string
+          nullable: true
+          example: ccustomer00000000000000001
         type:
           $ref: "#/components/schemas/TransactionType"
         direction:
@@ -1458,8 +2023,11 @@ components:
     AllMutationItem:
       allOf:
         - type: object
-          required: [customer_name]
+          required: [customer_id, customer_name]
           properties:
+            customer_id:
+              type: string
+              example: ccustomer00000000000000001
             customer_name:
               type: string
               example: Customer Satu
@@ -1529,6 +2097,18 @@ components:
         message:
           type: string
           example: OTP berhasil dikirim ke email
+    VerifyOtpSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          $ref: "#/components/schemas/VerifyOtpData"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: OTP valid
     MeSuccessResponse:
       type: object
       required: [data, status, message]
@@ -1560,8 +2140,7 @@ components:
       required: [data, status, message]
       properties:
         data:
-          nullable: true
-          example: null
+          $ref: "#/components/schemas/UserData"
         status:
           type: boolean
           example: true
@@ -1632,6 +2211,20 @@ components:
         message:
           type: string
           example: Mutasi semua customer berhasil diambil
+    CustomerOptionListSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerOptionItem"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Opsi customer berhasil diambil
     CustomerListSuccessResponse:
       type: object
       required: [data, status, message]
@@ -1652,6 +2245,107 @@ components:
         message:
           type: string
           example: Customer berhasil diambil
+    CustomerSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          $ref: "#/components/schemas/CustomerData"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Customer berhasil dibuat
+    CustomerDetailSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          $ref: "#/components/schemas/CustomerDetailData"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Detail customer berhasil diambil
+    MutationSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          $ref: "#/components/schemas/MutationItem"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Detail mutasi berhasil diambil
+    AllMutationSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          $ref: "#/components/schemas/AllMutationItem"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Detail mutasi berhasil diambil
+    DashboardPoint:
+      type: object
+      required: [date, income, outcome]
+      properties:
+        date:
+          type: string
+          format: date
+          example: "2026-07-23"
+        income:
+          type: integer
+          format: int64
+          example: 10000000
+        outcome:
+          type: integer
+          format: int64
+          example: 5000000
+    DashboardData:
+      type: object
+      required:
+        [total_customers, total_balance, total_income, total_outcome, chart]
+      properties:
+        total_customers:
+          type: integer
+          format: int64
+          example: 120
+        total_balance:
+          type: integer
+          format: int64
+          example: 2250000000
+        total_income:
+          type: integer
+          format: int64
+          example: 450000000
+        total_outcome:
+          type: integer
+          format: int64
+          example: 275000000
+        chart:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardPoint"
+    DashboardSuccessResponse:
+      type: object
+      required: [data, status, message]
+      properties:
+        data:
+          $ref: "#/components/schemas/DashboardData"
+        status:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Ringkasan dashboard berhasil diambil
     StaffListSuccessResponse:
       type: object
       required: [data, status, message]

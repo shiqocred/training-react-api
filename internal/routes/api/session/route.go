@@ -17,6 +17,7 @@ func RegisterRoutes(router fiber.Router, pool *pgxpool.Pool) {
 	h := Handler{Pool: pool}
 	router.Get("/me", h.Me)
 	router.Get("/check-auth", h.CheckAuth)
+	router.Post("/auth/logout", h.Logout)
 }
 
 func (h Handler) Me(c fiber.Ctx) error {
@@ -47,9 +48,19 @@ func (h Handler) Me(c fiber.Ctx) error {
 }
 
 func (h Handler) CheckAuth(c fiber.Ctx) error {
+	user := middleware.CurrentUser(c)
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"data":    nil,
+		"data": fiber.Map{
+			"id":    user.UserID,
+			"name":  user.Name,
+			"email": user.Email,
+			"role":  user.Role,
+		},
 		"message": "Session valid",
 		"status":  true,
 	})
+}
+
+func (h Handler) Logout(c fiber.Ctx) error {
+	return utils.Success(c, fiber.StatusOK, "Logout berhasil", nil)
 }

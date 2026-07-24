@@ -18,7 +18,7 @@ type Handler struct {
 }
 
 func RegisterRoutes(router fiber.Router, pool *pgxpool.Pool, cfg config.Config) {
-	staffroute.RegisterRoutes(router, pool)
+	staffroute.RegisterRoutes(router, pool, cfg)
 	h := Handler{Pool: pool, Cfg: cfg}
 	router.Get("/staff", h.ListStaff)
 	router.Post("/staff", h.CreateStaff)

@@ -63,7 +63,7 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_otps_user_created ON password_rese
 
 CREATE TABLE IF NOT EXISTS endpoint_logs (
     id TEXT PRIMARY KEY,
-    user_id TEXT REFERENCES users(id),
+    user_id TEXT REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
     method TEXT NOT NULL,
     endpoint TEXT NOT NULL,
     request JSONB NOT NULL,

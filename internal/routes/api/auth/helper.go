@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"regexp"
 	"strings"
@@ -39,4 +40,12 @@ func generateOTP() (string, error) {
 		otp += fmt.Sprintf("%d", int(b[0])%10)
 	}
 	return otp, nil
+}
+
+func generateResetToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
