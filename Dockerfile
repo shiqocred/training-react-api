@@ -27,8 +27,8 @@ COPY --from=builder /out/seed /usr/local/bin/seed
 COPY migrations ./migrations
 COPY .env.example ./.env.example
 
-ENV APP_PORT=3000
-EXPOSE 3000
+ENV APP_PORT=8080
+EXPOSE 8080
 
 USER app
 
