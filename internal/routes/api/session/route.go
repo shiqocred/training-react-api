@@ -50,12 +50,7 @@ func (h Handler) Me(c fiber.Ctx) error {
 func (h Handler) CheckAuth(c fiber.Ctx) error {
 	user := middleware.CurrentUser(c)
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"data": fiber.Map{
-			"id":    user.UserID,
-			"name":  user.Name,
-			"email": user.Email,
-			"role":  user.Role,
-		},
+		"data":    user.Role,
 		"message": "Session valid",
 		"status":  true,
 	})

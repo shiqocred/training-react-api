@@ -330,11 +330,7 @@ paths:
               examples:
                 success:
                   value:
-                    data:
-                      id: cadmin000000000000000001
-                      name: Admin Utama
-                      email: admin@example.com
-                      role: admin
+                    data: admin
                     message: Session valid
                     status: true
         default:
@@ -2140,7 +2136,7 @@ components:
       required: [data, status, message]
       properties:
         data:
-          $ref: "#/components/schemas/UserData"
+          $ref: "#/components/schemas/Role"
         status:
           type: boolean
           example: true
