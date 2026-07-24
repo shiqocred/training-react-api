@@ -1,0 +1,192 @@
+services:
+  traefik:
+    image: traefik:v3.7.8
+    container_name: banking-traefik
+    restart: unless-stopped
+    command:
+      - --api.dashboard=${TRAEFIK_DASHBOARD_ENABLED}
+      - --api.insecure=false
+
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+
+      - --certificatesresolvers.${TRAEFIK_CERT_RESOLVER}.acme.email=${TRAEFIK_ACME_EMAIL}
+      - --certificatesresolvers.${TRAEFIK_CERT_RESOLVER}.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.${TRAEFIK_CERT_RESOLVER}.acme.httpchallenge=true
+      - --certificatesresolvers.${TRAEFIK_CERT_RESOLVER}.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+    networks:
+      - traefik-public
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+
+      - traefik.http.routers.banking-traefik.rule=Host(`${TRAEFIK_DOMAIN}`)
+      - traefik.http.routers.banking-traefik.entrypoints=websecure
+      - traefik.http.routers.banking-traefik.tls=true
+      - traefik.http.routers.banking-traefik.tls.certresolver=${TRAEFIK_CERT_RESOLVER}
+      - traefik.http.routers.banking-traefik.service=api@internal
+      - traefik.http.routers.banking-traefik.middlewares=banking-traefik-auth
+      - traefik.http.middlewares.banking-traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_USERS}
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: banking-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - banking_postgres_data:/var/lib/postgresql/data
+    networks:
+      - banking-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  react-api:
+    # Kalau build langsung di server:
+    build:
+      context: ./training-react-api
+      dockerfile: Dockerfile
+    container_name: banking-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV}
+
+      APP_NAME: ${API_APP_NAME}
+      APP_PORT: ${API_APP_PORT}
+      APP_ENV: ${API_APP_ENV}
+
+      DATABASE_URL: ${DATABASE_URL}
+
+      AUTH_ISSUER: ${AUTH_ISSUER}
+      ACCESS_TOKEN_TTL_HOURS: ${ACCESS_TOKEN_TTL_HOURS}
+
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      EMAIL_FROM: ${EMAIL_FROM}
+      OTP_EXPIRES_MINUTES: ${OTP_EXPIRES_MINUTES}
+
+      ARGON_MEMORY: ${ARGON_MEMORY}
+      ARGON_ITERATIONS: ${ARGON_ITERATIONS}
+      ARGON_PARALLELISM: ${ARGON_PARALLELISM}
+      ARGON_SALT_LENGTH: ${ARGON_SALT_LENGTH}
+      ARGON_KEY_LENGTH: ${ARGON_KEY_LENGTH}
+
+      SEED_MODE: ${SEED_MODE}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+    networks:
+      - banking-internal
+      - traefik-public
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+
+      - traefik.http.routers.banking-api.rule=Host(`${API_DOMAIN}`)
+      - traefik.http.routers.banking-api.entrypoints=websecure
+      - traefik.http.routers.banking-api.tls=true
+      - traefik.http.routers.banking-api.tls.certresolver=${TRAEFIK_CERT_RESOLVER}
+      - traefik.http.services.banking-api.loadbalancer.server.port=${API_APP_PORT}
+
+  react-fe:
+    # Kalau build langsung di server:
+    build:
+      context: ./training-react-fe
+      dockerfile: Dockerfile
+      args:
+        API_URL: ${API_URL}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    container_name: banking-fe
+    restart: unless-stopped
+    depends_on:
+      - react-api
+    environment:
+      NODE_ENV: ${NODE_ENV}
+
+      # Server-side Next.js fetch, middleware, auth()
+      API_URL: ${API_URL}
+
+      # Browser-side fetch
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    networks:
+      - banking-internal
+      - traefik-public
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+
+      - traefik.http.routers.banking-fe.rule=Host(`${FE_DOMAIN}`)
+      - traefik.http.routers.banking-fe.entrypoints=websecure
+      - traefik.http.routers.banking-fe.tls=true
+      - traefik.http.routers.banking-fe.tls.certresolver=${TRAEFIK_CERT_RESOLVER}
+      - traefik.http.services.banking-fe.loadbalancer.server.port=3000
+
+  seed:
+    build:
+      context: ./training-react-api
+      dockerfile: Dockerfile
+    profiles:
+      - tools
+    container_name: banking-seed
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      APP_NAME: ${API_APP_NAME}
+      APP_PORT: ${API_APP_PORT}
+      APP_ENV: ${API_APP_ENV}
+      DATABASE_URL: ${DATABASE_URL}
+
+      AUTH_ISSUER: ${AUTH_ISSUER}
+      ACCESS_TOKEN_TTL_HOURS: ${ACCESS_TOKEN_TTL_HOURS}
+
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      EMAIL_FROM: ${EMAIL_FROM}
+      OTP_EXPIRES_MINUTES: ${OTP_EXPIRES_MINUTES}
+
+      ARGON_MEMORY: ${ARGON_MEMORY}
+      ARGON_ITERATIONS: ${ARGON_ITERATIONS}
+      ARGON_PARALLELISM: ${ARGON_PARALLELISM}
+      ARGON_SALT_LENGTH: ${ARGON_SALT_LENGTH}
+      ARGON_KEY_LENGTH: ${ARGON_KEY_LENGTH}
+
+      SEED_MODE: ${SEED_MODE}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+    networks:
+      - banking-internal
+    command: ["/usr/local/bin/seed"]
+
+volumes:
+  banking_postgres_data:
+  traefik_letsencrypt:
+
+networks:
+  banking-internal:
+    name: banking-internal
+    driver: bridge
+
+  traefik-public:
+    name: traefik-public
+    driver: bridge
